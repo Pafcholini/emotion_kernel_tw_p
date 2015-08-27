@@ -317,7 +317,7 @@ static void mdss_fb_parse_dt_split(struct msm_fb_data_type *mfd)
 		"qcom,mdss-fb-split", data, 2);
 
 	if (!mdss_fb_validate_split(data[0], data[1], mfd))
-		pr_debug("dt split_left=%d split_right=%d\n", data[0], data[1]);
+		pr_err("dt split_left=%d split_right=%d\n", data[0], data[1]);
 }
 
 static ssize_t mdss_fb_store_split(struct device *dev,
@@ -338,17 +338,6 @@ static ssize_t mdss_fb_store_split(struct device *dev,
 	return len;
 }
 
-static ssize_t mdss_fb_show_split(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	ssize_t ret = 0;
-	struct fb_info *fbi = dev_get_drvdata(dev);
-	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
-	ret = snprintf(buf, PAGE_SIZE, "%d %d\n",
-		       mfd->split_fb_left, mfd->split_fb_right);
-	return ret;
-}
-
 static void mdss_fb_get_split(struct msm_fb_data_type *mfd)
 {
 	if (mfd->index != 0)
@@ -360,6 +349,22 @@ static void mdss_fb_get_split(struct msm_fb_data_type *mfd)
 	if (mfd->split_fb_left || mfd->split_fb_right)
 		pr_debug("split framebuffer left=%d right=%d\n",
 			mfd->split_fb_left, mfd->split_fb_right);
+}
+
+static ssize_t mdss_fb_show_split(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+
+	if((mfd->split_fb_left == 0) && (mfd->split_fb_right == 0)){
+		printk("No split info => set as split info\n");
+		mdss_fb_get_split(mfd);
+	}
+	ret = snprintf(buf, PAGE_SIZE, "%d %d\n",
+		       mfd->split_fb_left, mfd->split_fb_right);
+	return ret;
 }
 
 static ssize_t mdss_mdp_show_blank_event(struct device *dev,
@@ -3183,6 +3188,13 @@ int mdss_register_panel(struct platform_device *pdev,
 		goto mdss_notfound;
 	}
 
+	if (pdata && !pdata->panel_info.is_prim_panel &&
+		!fbi_list_index) {
+		pr_err("%s %d panel deferred, first panel not prim\n",
+			__func__, pdata->panel_info.type);
+		return -EPROBE_DEFER;
+	}
+
 	fb_pdev = of_find_device_by_node(node);
 	if (fb_pdev) {
 		rc = mdss_fb_register_extra_panel(fb_pdev, pdata);
@@ -3264,7 +3276,7 @@ module_init(mdss_fb_init);
 int mdss_fb_suspres_panel(struct device *dev, void *data)
 {
 	struct msm_fb_data_type *mfd;
-	int rc;
+	int rc = 0;
 	u32 event;
 
 	if (!data) {
@@ -3277,10 +3289,14 @@ int mdss_fb_suspres_panel(struct device *dev, void *data)
 
 	event = *((bool *) data) ? MDSS_EVENT_RESUME : MDSS_EVENT_SUSPEND;
 
-	rc = mdss_fb_send_panel_event(mfd, event, NULL);
-	if (rc)
-		pr_warn("unable to %s fb%d (%d)\n",
-			event == MDSS_EVENT_RESUME ? "resume" : "suspend",
-			mfd->index, rc);
+	/* Do not send runtime suspend/resume for HDMI primary */
+	if (!mdss_fb_is_hdmi_primary(mfd)) {
+		rc = mdss_fb_send_panel_event(mfd, event, NULL);
+		if (rc)
+			pr_warn("unable to %s fb%d (%d)\n",
+				event == MDSS_EVENT_RESUME ?
+				"resume" : "suspend",
+				mfd->index, rc);
+	}
 	return rc;
 }

@@ -96,8 +96,8 @@ static void msm_ispif_io_dump_start_reg(struct ispif_device *ispif)
 static inline int msm_ispif_is_intf_valid(uint32_t csid_version,
 	uint8_t intf_type)
 {
-	return (csid_version <= CSID_VERSION_V2 && intf_type != VFE0) ?
-		false : true;
+    return ((csid_version <= CSID_VERSION_V2 && intf_type != VFE0) ||
+	    (intf_type >= VFE_MAX)) ? false : true;
 }
 
 static struct msm_cam_clk_info ispif_8974_ahb_clk_info[] = {
@@ -951,6 +951,10 @@ static void ispif_process_irq(struct ispif_device *ispif,
 	if (out[vfe_id].ispifIrqStatus0 &
 			ISPIF_IRQ_STATUS_PIX_SOF_MASK) {
 		ispif->sof_count[vfe_id].sof_cnt[PIX0]++;
+		if ((ispif->sof_count[vfe_id].sof_cnt[PIX0] % 30 == 0) ||
+                    (ispif->sof_count[vfe_id].sof_cnt[PIX0] == 1))
+                    pr_err("[frame_dbg] vfe%d frame idx [%d]\n",
+                        vfe_id, ispif->sof_count[vfe_id].sof_cnt[PIX0]);
 	}
 	if (out[vfe_id].ispifIrqStatus0 &
 			ISPIF_IRQ_STATUS_RDI0_SOF_MASK) {
